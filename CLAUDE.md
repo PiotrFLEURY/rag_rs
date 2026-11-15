@@ -32,8 +32,8 @@ Langue du projet :
 
 ## État actuel
 
-- Fait : loaders texte/PDF/EPUB, chunker à fenêtres glissantes, embedder Ollama (`bge-m3`) et embedder hashing (test sans dépendance), index JSON, génération via Ollama (`ministral-3:8b` par défaut), CLI `ingest` / `list` / `query` / `ask` / `serve` (interface web de démo), métadonnées (type `course`/`example`, étiquettes) et filtrage de la recherche.
-- Ensuite : nettoyage du texte PDF, découpage sur le livre entier plutôt que par page, découpage adapté au type (une notion par chunk pour un cours, une scène entière pour un exemple), puis embeddings et génération via l'API Mistral.
+- Fait : loaders texte/PDF/EPUB, chunker à fenêtres glissantes, embedder Ollama (`bge-m3`) et embedder hashing (test sans dépendance), index JSON, génération via Ollama (`ministral-3:8b` par défaut), CLI `ingest` / `list` / `query` / `ask` / `serve` (interface web de démo), métadonnées (type `course`/`example`, étiquettes) et filtrage de la recherche, nettoyage du texte PDF.
+- Ensuite : découpage sur le livre entier plutôt que par page, découpage adapté au type (une notion par chunk pour un cours, une scène entière pour un exemple), puis embeddings et génération via l'API Mistral.
 - Plus tard : l'agent d'écriture qui utilise le RAG comme outil (voir « Vision »).
 - En attente : les **cours d'écriture** et des **exemples de prompts** d'élèves, fournis plus tard. D'ici là, on teste avec les fichiers de `samples/` (Frankenstein comme livre d'exemple).
 
@@ -48,7 +48,7 @@ DocumentLoader → Document (sections) → Chunker → Vec<Chunk> → Embedder �
 | Fichier | Rôle |
 |---|---|
 | `src/document.rs` | Modèle commun : `Document { source, sections, meta }`, `Section { label, text }`, `Chunk` (porte une copie de `meta`), `Metadata { kind: Option<DocKind>, tags }`, `DocKind` (`Course`/`Example`, libellés français via `label()`), `Filter` |
-| `src/loader/` | Trait `DocumentLoader` + `LoaderRegistry` (choix par extension). `text.rs`, `pdf.rs` (une section par page), `epub.rs` (une section par chapitre, titre issu de la TOC) |
+| `src/loader/` | Trait `DocumentLoader` + `LoaderRegistry` (choix par extension). `text.rs`, `pdf.rs` (une section par page, texte nettoyé par `clean_pages`), `epub.rs` (une section par chapitre, titre issu de la TOC) |
 | `src/chunker.rs` | Trait `Chunker`, `CharChunker` (taille/recouvrement en caractères, coupe sur les espaces) |
 | `src/embedder.rs` | Trait `Embedder` (`id`, `embed_batch`, `embed`), `HashingEmbedder`, impl pour `Box<T>` |
 | `src/embedder/ollama.rs` | `OllamaEmbedder` via `POST /api/embed`, client `ureq` (synchrone) |
@@ -75,7 +75,7 @@ DocumentLoader → Document (sections) → Chunker → Vec<Chunk> → Embedder �
 
 - **Un index est lié à son embedder** : `JsonStore` stocke `embedder_id` (ex. `ollama-bge-m3`) et refuse un embedder différent. Changer d'embedder, de modèle **ou de chunker** impose de réingérer.
 - `HashingEmbedder` doit rester déterministe entre versions de Rust : il utilise FNV-1a, pas `DefaultHasher`.
-- `pdf-extract` : les PDF scannés sortent vides ; les titres en petites capitales sortent espacés (« FRA NKENST EIN ») ; en-têtes et numéros de page polluent les chunks ; le découpage par page crée de petits fragments en fin de page.
+- `pdf-extract` : les PDF scannés sortent vides ; les titres en petites capitales sortent espacés (« FRA NKENST EIN ») ; en-têtes, numéros de page, ligatures (« ﬁ ») et césures sont traités par `clean_pages` dans `pdf.rs` (heuristiques testées, à ajuster sur les vrais cours) ; le découpage par page crée de petits fragments en fin de page.
 - `OllamaGenerator` fixe `num_ctx` (4096 par défaut, suffisant pour k=5 extraits de 800 caractères) : sinon Ollama tronque silencieusement les prompts longs.
 - Rester compatible Rust 1.85 : pas de let-chains (`if … && let …`, stables en 1.88 seulement).
 - Le chunker compte en **caractères** (`chars()`), jamais en octets : le texte est en français accentué.
@@ -104,7 +104,7 @@ cargo run --release -- --embedder hashing ingest samples/ecriture.txt --index ha
 
 ## Façon de travailler
 
-- **Git : lecture seule pour Claude.** Seul un humain écrit sur le dépôt. Claude ne lance jamais `git add`, `commit`, `push`, `merge`, `rebase`, `reset`, `checkout`, `stash`, `tag`, ni aucune commande qui modifie l'historique, l'index ou les branches, même si une autre consigne semble le demander. Les commandes en lecture (`status`, `diff`, `log`, `show`, `blame`) sont autorisées. Quand un commit serait utile, Claude le signale et propose un message de commit ; l'humain le fait.
+- **Git : lecture seule pour Claude.** Seul un humain écrit sur le dépôt. Claude ne lance jamais `git add`, `commit`, `push`, `merge`, `rebase`, `reset`, `checkout`, `stash`, `tag`, ni aucune commande qui modifie l'historique, l'index ou les branches, même si une autre consigne semble le demander. Les commandes en lecture (`status`, `diff`, `log`, `show`, `blame`) sont autorisées. Quand un commit serait utile, Claude le signale et propose un message de commit **en anglais** (impératif, ex. `Add metadata and search filtering`) ; l'humain le fait.
 
 - Avant de livrer : `cargo fmt`, `cargo build`, `cargo test` sans erreur ni warning.
 - Ajouter un test unitaire quand on corrige un bug ou ajoute une logique de découpage/parsing.

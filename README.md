@@ -7,10 +7,16 @@ Formats gérés :
 | Extension | Loader | Découpage en sections |
 |---|---|---|
 | `.txt`, `.md` | `TextLoader` | une seule section |
-| `.pdf` | `PdfLoader` (crate `pdf-extract`) | une section par page (`page 3`) |
+| `.pdf` | `PdfLoader` (crate `pdf-extract`) | une section par page (`page 3`), texte nettoyé (voir plus bas) |
 | `.epub` | `EpubLoader` (crates `epub` + `html2text`) | une section par chapitre, titrée via la table des matières |
 
 Le loader est choisi automatiquement d'après l'extension du fichier.
+
+Le texte extrait d'un PDF est nettoyé avant découpage :
+- ligatures typographiques développées (« ﬁ » → « fi ») et césures invisibles supprimées ;
+- numéros de page retirés en haut et en bas de page (« 12 », « - 12 - », « Page 12 », « 12 / 300 ») ;
+- en-têtes et pieds de page retirés : lignes de bord qui reviennent sur au moins 40 % des pages (les chiffres sont ignorés dans la comparaison) ;
+- mots coupés en fin de ligne ressoudés : sans tiret pour une césure (« senti-/ments »), avec tiret pour un mot composé connu ou un nom propre (« Croyez-/moi », « au-/dessus », « Jean-/Pierre »).
 
 ## Prérequis
 
@@ -224,14 +230,16 @@ Le reste du code ne change pas.
 - **Taille de l'index** : JSON avec des vecteurs de 1024 flottants (`bge-m3`), plusieurs dizaines de Mo pour un gros livre.
 - **Index lié à l'embedder** : l'index stocke l'identifiant de l'embedder qui l'a construit et refuse d'être interrogé avec un autre. Changer d'embedder impose de réingérer.
 - **Recherche exhaustive** : adaptée jusqu'à quelques dizaines de milliers de chunks. Au-delà, implémenter `VectorStore` sur une base vectorielle (Qdrant, LanceDB…).
-- **PDF scannés** : sans couche texte, ils ressortent vides (il faudrait un OCR). La mise en page complexe (colonnes, notes de bas de page) peut mélanger l'ordre du texte.
+- **PDF scannés** : sans couche texte, ils ressortent vides (il faudrait un OCR). La mise en page complexe (colonnes, notes de bas de page) peut mélanger l'ordre du texte. Les titres en petites capitales sortent espacés (« FRA NKENST EIN »).
+- **Nettoyage PDF heuristique** : la distinction césure / mot composé repose sur des listes de mots fréquents, sans dictionnaire. Les en-têtes qui alternent (titre du livre sur les pages paires, du chapitre sur les impaires) ne sont retirés que s'ils dépassent le seuil de 40 %. Un mot coupé entre deux pages n'est pas ressoudé.
 - **EPUB protégés par DRM** : non lisibles.
 
 ## Feuille de route
 
 - [x] Embeddings locaux via Ollama (`bge-m3`)
 - [ ] Embeddings Mistral (`mistral-embed`)
-- [ ] Nettoyage du texte PDF (en-têtes, pieds de page, césures)
+- [x] Nettoyage du texte PDF (en-têtes, pieds de page, numéros de page, ligatures, césures)
+- [ ] Découpage sur le livre entier plutôt que par page
 - [x] Commande `ask` : passages top-k injectés comme contexte dans un LLM (Ollama, `ministral-3:8b`)
 - [x] Interface web de démo (`serve`)
 - [x] Métadonnées (type `course`/`example`, étiquettes) et filtrage de la recherche
