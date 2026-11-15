@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rag_rs — Bibliothèque</title>
+<style>
+  :root {
+    --bg: #f6f3ee; --surface: #fffdf9; --ink: #1f1b16; --muted: #6f665b;
+    --line: #e4ddd2; --accent: #8a3b12; --accent-soft: #f3e3d6; --mark: #fff1c2;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17140f; --surface: #201c16; --ink: #ece5da; --muted: #a39887;
+      --line: #342e25; --accent: #e09a6b; --accent-soft: #3a2a1e; --mark: #4a3d16;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 var(--sans); }
+  main { max-width: 820px; margin: 0 auto; padding: 48px 20px 80px; }
+
+  header h1 { font: 600 2rem/1.2 var(--serif); margin: 0 0 6px; letter-spacing: -0.01em; }
+  header h1 span { color: var(--accent); }
+  .meta { color: var(--muted); font-size: 0.85rem; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .meta b { color: var(--ink); font-weight: 500; }
+
+  form { margin: 32px 0 12px; display: flex; gap: 10px; }
+  @media (max-width: 520px) { form { flex-direction: column; } form textarea { flex: none; } button { min-height: 46px; } .options span { display: none; } }
+  textarea {
+    flex: 1; resize: none; min-height: 56px; max-height: 200px; padding: 14px 16px;
+    font: 1.05rem/1.5 var(--sans); color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 12px; outline: none;
+  }
+  textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  button {
+    font: 600 0.95rem var(--sans); padding: 0 22px; border: 0; border-radius: 12px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  .options { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.85rem; }
+  .options input { width: 56px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+  .examples button {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+    font-weight: 400; padding: 7px 12px; border-radius: 999px; font-size: 0.88rem;
+  }
+  .examples button:hover { border-color: var(--accent); color: var(--accent); }
+
+  #answer-block { display: none; margin-top: 36px; }
+  .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+  #question-echo { font: italic 1.15rem/1.4 var(--serif); margin: 0 0 18px; }
+  #answer {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 26px; font: 1.12rem/1.7 var(--serif); min-height: 64px;
+  }
+  #answer p { margin: 0 0 0.8em; } #answer p:last-child { margin-bottom: 0; }
+  #answer ul, #answer ol { margin: 0 0 0.8em; padding-left: 1.3em; }
+  #answer.streaming::after { content: "▍"; color: var(--accent); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .status { color: var(--muted); font: italic 0.95rem var(--sans); }
+  .error { color: #b3261e; font: 0.95rem var(--sans); white-space: pre-wrap; }
+
+  a.cite {
+    display: inline-block; min-width: 1.4em; padding: 0 0.35em; margin: 0 1px;
+    font: 600 0.72em/1.5 var(--sans); text-align: center; vertical-align: 0.15em;
+    color: var(--accent); background: var(--accent-soft); border-radius: 5px; text-decoration: none;
+  }
+  a.cite:hover { background: var(--accent); color: #fff; }
+
+  #sources { margin-top: 30px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .source {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 16px; transition: background 0.4s, border-color 0.4s;
+  }
+  .source.flash { background: var(--mark); border-color: var(--accent); }
+  .source summary { cursor: pointer; display: flex; align-items: center; gap: 10px; list-style: none; }
+  .source summary::-webkit-details-marker { display: none; }
+  .source .num { font: 600 0.8rem var(--sans); color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 7px; }
+  .source .cit { flex: 1; min-width: 0; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source .sec { font-weight: 600; } .source .book { color: var(--muted); }
+  .source .score { font-size: 0.78rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .source .bar { width: 48px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .source .bar i { display: block; height: 100%; background: var(--accent); }
+  .source blockquote { margin: 12px 0 2px; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); font: 0.95rem/1.6 var(--serif); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Demandez à la <span>bibliothèque</span></h1>
+    <div class="meta" id="meta">Chargement…</div>
+  </header>
+
+  <form id="form">
+    <textarea id="q" rows="1" placeholder="Posez une question sur le livre…" autofocus></textarea>
+    <button id="go" type="submit">Demander</button>
+  </form>
+  <div class="options">
+    <label for="k">Passages consultés</label>
+    <input id="k" type="number" min="1" max="20">
+    <span>· Entrée pour envoyer, Maj+Entrée pour aller à la ligne</span>
+  </div>
+  <div class="examples" id="examples"></div>
+
+  <section id="answer-block">
+    <div class="label">Question</div>
+    <p id="question-echo"></p>
+    <div class="label">Réponse</div>
+    <div id="answer"></div>
+    <div id="sources"></div>
+  </section>
+</main>
+
+<script>
+// Questions proposées pour la démo : à adapter au livre indexé.
+const EXAMPLES = [
+  "Pourquoi la créature se sent-elle rejetée ?",
+  "Comment la créature apprend-elle à parler ?",
+  "Que demande la créature à Victor ?",
+];
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// Markdown minimal (paragraphes, listes, gras, italique) + renvois [1] cliquables.
+function render(md) {
+  const inline = (t) => esc(t)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>")
+    .replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (_, nums) =>
+      nums.split(",").map((n) => `<a class="cite" href="#src-${n.trim()}" data-n="${n.trim()}">${n.trim()}</a>`).join(""));
+  return md.trim().split(/\n{2,}/).map((block) => {
+    const lines = block.split("\n");
+    if (lines.every((l) => /^\s*[-*•]\s+/.test(l)))
+      return "<ul>" + lines.map((l) => `<li>${inline(l.replace(/^\s*[-*•]\s+/, ""))}</li>`).join("") + "</ul>";
+    if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l)))
+      return "<ol>" + lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("") + "</ol>";
+    return `<p>${lines.map((l) => inline(l.replace(/^#+\s*/, ""))).join("<br>")}</p>`;
+  }).join("");
+}
+
+function showSources(sources) {
+  $("sources").innerHTML = `<div class="label">Sources</div>` + sources.map((s) => `
+    <details class="source" id="src-${s.n}">
+      <summary>
+        <span class="num">${s.n}</span>
+        <span class="cit" title="${esc(s.citation)}">${s.section ? `<span class="sec">${esc(s.section)}</span> · ` : ""}<span class="book">${esc(s.book)}</span></span>
+        <span class="score"><span class="bar"><i style="width:${Math.max(4, Math.min(100, s.score * 100))}%"></i></span>${s.score.toFixed(2)}</span>
+      </summary>
+      <blockquote>${esc(s.text)}</blockquote>
+    </details>`).join("");
+}
+
+// Clic sur un renvoi [n] : ouvre et met en évidence la source correspondante.
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a.cite");
+  if (!a) return;
+  e.preventDefault();
+  const card = $("src-" + a.dataset.n);
+  if (!card) return;
+  card.open = true;
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.classList.add("flash");
+  setTimeout(() => card.classList.remove("flash"), 1200);
+});
+
+async function ask(question) {
+  question = question.trim();
+  if (!question) return;
+  autosize();
+  $("go").disabled = true;
+  $("answer-block").style.display = "block";
+  $("question-echo").textContent = question;
+  $("sources").innerHTML = "";
+  const answer = $("answer");
+  answer.className = "";
+  answer.innerHTML = `<span class="status">Recherche des passages pertinents…</span>`;
+  let text = "";
+
+  try {
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, k: Number($("k").value) || undefined }),
+    });
+    if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+
+    // Lecture du flux SSE (EventSource ne permet pas le POST).
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep;
+      while ((sep = buffer.indexOf("\n\n")) >= 0) {
+        const raw = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        let event = "message", data = "";
+        for (const line of raw.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trimStart();
+        }
+        if (event === "sources") {
+          showSources(JSON.parse(data));
+          answer.innerHTML = `<span class="status">Rédaction de la réponse…</span>`;
+        } else if (event === "token") {
+          text += JSON.parse(data);
+          answer.className = "streaming";
+          answer.innerHTML = render(text);
+        } else if (event === "error") {
+          throw new Error(JSON.parse(data));
+        }
+      }
+    }
+    answer.className = "";
+    if (!text.trim()) answer.innerHTML = `<span class="status">Le modèle n'a renvoyé aucun texte.</span>`;
+  } catch (err) {
+    answer.className = "";
+    answer.innerHTML = `<div class="error">${esc(err.message)}</div>`;
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+$("form").addEventListener("submit", (e) => { e.preventDefault(); ask($("q").value); });
+$("q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("form").requestSubmit(); }
+});
+function autosize() {
+  const q = $("q");
+  q.style.height = "auto";
+  q.style.height = q.scrollHeight + 2 + "px"; // + bordures (box-sizing: border-box)
+}
+$("q").addEventListener("input", autosize);
+
+$("examples").innerHTML = EXAMPLES.map((q) => `<button type="button">${esc(q)}</button>`).join("");
+$("examples").addEventListener("click", (e) => {
+  if (e.target.tagName !== "BUTTON") return;
+  $("q").value = e.target.textContent;
+  ask(e.target.textContent);
+});
+
+fetch("/api/info").then((r) => r.json()).then((info) => {
+  $("k").value = info.default_k;
+  const books = info.books.length ? info.books.map(esc).join(", ") : "aucun livre";
+  $("meta").innerHTML =
+    `<span><b>${books}</b></span><span>${info.chunks} passages indexés</span>` +
+    `<span>recherche : ${esc(info.embedder)}</span><span>rédaction : ${esc(info.generator)}</span>`;
+}).catch(() => { $("meta").textContent = "Serveur injoignable"; });
+</script>
+</body>
+</html>
