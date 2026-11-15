@@ -1,0 +1,139 @@
+{
+    // Lanceurs pour l'extension CodeLLDB (vadimcn.vscode-lldb).
+    // Build debug : l'ingestion d'un gros PDF est plus lente qu'en --release.
+    // Les commandes Ollama supposent `ollama serve` lancé avec bge-m3 et ministral-3:8b.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "ingest",
+            "cargo": {
+                "args": ["build", "--bin=rag_rs", "--package=rag_rs"],
+                "filter": { "name": "rag_rs", "kind": "bin" }
+            },
+            "args": ["--index", "${input:index}", "ingest", "${input:file}", "--type", "${input:docType}"],
+            "cwd": "${workspaceFolder}",
+            "env": { "RUST_BACKTRACE": "1" },
+            "sourceLanguages": ["rust"]
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "ingest (hashing, sans Ollama)",
+            "cargo": {
+                "args": ["build", "--bin=rag_rs", "--package=rag_rs"],
+                "filter": { "name": "rag_rs", "kind": "bin" }
+            },
+            "args": ["--embedder", "hashing", "--index", "hash.json", "ingest", "${input:file}", "--type", "${input:docType}"],
+            "cwd": "${workspaceFolder}",
+            "env": { "RUST_BACKTRACE": "1" },
+            "sourceLanguages": ["rust"]
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "list",
+            "cargo": {
+                "args": ["build", "--bin=rag_rs", "--package=rag_rs"],
+                "filter": { "name": "rag_rs", "kind": "bin" }
+            },
+            "args": ["--index", "${input:index}", "list"],
+            "cwd": "${workspaceFolder}",
+            "env": { "RUST_BACKTRACE": "1" },
+            "sourceLanguages": ["rust"]
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "query",
+            "cargo": {
+                "args": ["build", "--bin=rag_rs", "--package=rag_rs"],
+                "filter": { "name": "rag_rs", "kind": "bin" }
+            },
+            "args": ["--index", "${input:index}", "query", "${input:question}", "-k", "${input:k}"],
+            "cwd": "${workspaceFolder}",
+            "env": { "RUST_BACKTRACE": "1" },
+            "sourceLanguages": ["rust"]
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "ask",
+            "cargo": {
+                "args": ["build", "--bin=rag_rs", "--package=rag_rs"],
+                "filter": { "name": "rag_rs", "kind": "bin" }
+            },
+            "args": ["--index", "${input:index}", "ask", "${input:question}", "-k", "${input:k}", "--show-context"],
+            "cwd": "${workspaceFolder}",
+            "env": { "RUST_BACKTRACE": "1" },
+            "sourceLanguages": ["rust"]
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "serve (http://localhost:3000)",
+            "cargo": {
+                "args": ["build", "--bin=rag_rs", "--package=rag_rs"],
+                "filter": { "name": "rag_rs", "kind": "bin" }
+            },
+            "args": ["--index", "${input:index}", "serve", "--port", "3000"],
+            "cwd": "${workspaceFolder}",
+            "env": { "RUST_BACKTRACE": "1" },
+            "sourceLanguages": ["rust"]
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "tests unitaires",
+            "cargo": {
+                "args": ["test", "--no-run", "--bin=rag_rs", "--package=rag_rs"],
+                "filter": { "name": "rag_rs", "kind": "bin" }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": { "RUST_BACKTRACE": "1" },
+            "sourceLanguages": ["rust"]
+        }
+    ],
+    "inputs": [
+        {
+            "id": "index",
+            "type": "promptString",
+            "description": "Fichier d'index",
+            "default": "biblio.json"
+        },
+        {
+            "id": "file",
+            "type": "pickString",
+            "description": "Fichier à ingérer",
+            "options": [
+                "samples/Frankenstein, ou le Prométhée moderne Volume 2 - Mary Wollstonecraft Shelley (BDeBooks.com).pdf",
+                "samples/Frankenstein, ou le Prométhée moderne Volume 2 - Mary Wollstonecraft Shelley (BDeBooks.com).epub",
+                "samples/ecriture.pdf",
+                "samples/ecriture.epub",
+                "samples/ecriture.txt"
+            ],
+            "default": "samples/ecriture.pdf"
+        },
+        {
+            "id": "docType",
+            "type": "pickString",
+            "description": "Type du document",
+            "options": ["example", "course"],
+            "default": "example"
+        },
+        {
+            "id": "question",
+            "type": "promptString",
+            "description": "Question",
+            "default": "Pourquoi la créature se sent-elle rejetée ?"
+        },
+        {
+            "id": "k",
+            "type": "promptString",
+            "description": "Nombre de passages (k)",
+            "default": "5"
+        }
+    ]
+}

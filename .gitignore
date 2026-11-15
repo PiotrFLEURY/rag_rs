@@ -5,3 +5,4 @@
 /samples/*.pdf
 /samples/*.txt
 !/samples/ecriture.*
+!/.vscode/*.json
