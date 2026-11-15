@@ -10,14 +10,21 @@ Règles :
 - Réponds uniquement à partir des extraits fournis, jamais de tes connaissances générales.
 - Si les extraits ne permettent pas de répondre, dis-le clairement au lieu d'inventer.
 - Cite tes sources avec leur numéro entre crochets, par exemple [2], après chaque affirmation.
+- Les extraits marqués (cours) expliquent des techniques d'écriture ; ceux marqués (exemple) sont des textes littéraires qui les illustrent.
 - Réponds en français, de façon claire et concise.";
 
 /// Système + message utilisateur contenant les extraits numérotés et la question.
 pub fn build_messages(question: &str, results: &[SearchResult]) -> Vec<Message> {
     let mut context = String::new();
     for (i, r) in results.iter().enumerate() {
+        let kind = r
+            .chunk
+            .meta
+            .kind
+            .map(|k| format!("({}) ", k.label()))
+            .unwrap_or_default();
         context.push_str(&format!(
-            "[{}] {}\n{}\n\n",
+            "[{}] {kind}{}\n{}\n\n",
             i + 1,
             citation(r),
             r.chunk.text
@@ -45,10 +52,10 @@ pub fn citation(r: &SearchResult) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::Chunk;
+    use crate::document::{Chunk, DocKind, Metadata};
     use crate::generator::Role;
 
-    fn result(section: Option<&str>, text: &str) -> SearchResult {
+    fn result(section: Option<&str>, text: &str, kind: Option<DocKind>) -> SearchResult {
         SearchResult {
             score: 0.5,
             chunk: Chunk {
@@ -56,23 +63,24 @@ mod tests {
                 section: section.map(Into::into),
                 index: 0,
                 text: text.into(),
+                meta: Metadata::new(kind, &[]),
             },
         }
     }
 
     #[test]
-    fn numerote_les_extraits_et_place_la_question_a_la_fin() {
+    fn numbers_excerpts_and_puts_question_last() {
         let messages = build_messages(
             "Que fait Félix ?",
             &[
-                result(Some("page 3"), "Félix travaille."),
-                result(None, "Autre passage."),
+                result(Some("page 3"), "Félix travaille.", Some(DocKind::Example)),
+                result(None, "Autre passage.", None),
             ],
         );
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
         let user = &messages[1].content;
-        assert!(user.contains("[1] livre.pdf, page 3\nFélix travaille."));
+        assert!(user.contains("[1] (exemple) livre.pdf, page 3\nFélix travaille."));
         assert!(user.contains("[2] livre.pdf\nAutre passage."));
         assert!(user.ends_with("Question : Que fait Félix ?"));
     }

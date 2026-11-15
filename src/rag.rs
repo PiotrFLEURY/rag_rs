@@ -2,6 +2,7 @@
 //! de chunker, d'embedder ou de store ne touche pas ce fichier.
 
 use crate::chunker::Chunker;
+use crate::document::{Filter, Metadata};
 use crate::embedder::Embedder;
 use crate::generator::Generator;
 use crate::loader::LoaderRegistry;
@@ -27,9 +28,11 @@ pub struct Rag<C, E, S> {
 }
 
 impl<C: Chunker, E: Embedder, S: VectorStore> Rag<C, E, S> {
-    /// Charge, découpe, vectorise et indexe un fichier. Renvoie le nb de chunks.
-    pub fn ingest(&mut self, path: &Path) -> Result<usize> {
-        let doc = self.loaders.load(path)?;
+    /// Charge, découpe, vectorise et indexe un fichier avec ses métadonnées.
+    /// Renvoie le nombre de chunks.
+    pub fn ingest(&mut self, path: &Path, meta: Metadata) -> Result<usize> {
+        let mut doc = self.loaders.load(path)?;
+        doc.meta = meta;
         let chunks = self.chunker.chunk(&doc);
         let n = chunks.len();
 
@@ -58,9 +61,9 @@ impl<C: Chunker, E: Embedder, S: VectorStore> Rag<C, E, S> {
         Ok(n)
     }
 
-    pub fn retrieve(&self, question: &str, k: usize) -> Result<Vec<SearchResult>> {
+    pub fn retrieve(&self, question: &str, k: usize, filter: &Filter) -> Result<Vec<SearchResult>> {
         let q = self.embedder.embed(question)?;
-        Ok(self.store.search(&q, k))
+        Ok(self.store.search(&q, k, filter))
     }
 
     /// Retrouve les `k` passages les plus proches puis fait rédiger la réponse.
@@ -70,12 +73,16 @@ impl<C: Chunker, E: Embedder, S: VectorStore> Rag<C, E, S> {
         generator: &G,
         question: &str,
         k: usize,
+        filter: &Filter,
         on_sources: &mut dyn FnMut(&[SearchResult]),
         on_token: &mut dyn FnMut(&str),
     ) -> Result<Answer> {
-        let sources = self.retrieve(question, k)?;
+        let sources = self.retrieve(question, k, filter)?;
         if sources.is_empty() {
-            bail!("l'index est vide : ingère d'abord un fichier avec `ingest`");
+            if filter.is_empty() {
+                bail!("l'index est vide : ingère d'abord un fichier avec `ingest`");
+            }
+            bail!("aucun document de l'index ne correspond au filtre ({filter})");
         }
         // Les sources sont connues avant la génération : on peut les afficher tout de suite.
         on_sources(&sources);

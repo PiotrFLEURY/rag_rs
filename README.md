@@ -47,6 +47,35 @@ Options :
 
 Réingérer un fichier remplace ses anciens chunks (pas de doublons). Plusieurs fichiers peuvent cohabiter dans le même index.
 
+### Métadonnées : type et étiquettes
+
+Chaque document peut recevoir à l'ingestion un **type** et des **étiquettes**, qui servent ensuite à filtrer la recherche :
+
+```bash
+cargo run --release -- ingest cours/dialogues.pdf --type course --tag dialogue
+cargo run --release -- ingest romans/frankenstein.pdf --type example --tag gothique --tag roman
+```
+
+- `--type` : `course` (cours : explique des techniques d'écriture) ou `example` (exemple : texte littéraire qui les illustre). Facultatif : sans lui, le document est « sans type ».
+- `--tag` : étiquette libre (genre, technique…), répétable. Les étiquettes sont mises en minuscules.
+
+Pour changer les métadonnées d'un document, il faut le réingérer.
+
+Voir le contenu de l'index :
+
+```bash
+cargo run --release -- list --index livre.json
+```
+
+Filtrer la recherche (valable pour `query` et `ask`) :
+
+```bash
+cargo run --release -- ask "Comment écrire un bon dialogue ?" --type course --index livre.json
+cargo run --release -- query "scène de tension" --type example --tag gothique --index livre.json
+```
+
+Avec plusieurs `--tag`, un document doit les porter **toutes**. Un document sans type est exclu dès qu'on filtre sur le type. Dans le prompt, chaque extrait est marqué `(cours)` ou `(exemple)` pour que le LLM sache comment s'en servir. Les index créés avant les métadonnées restent lisibles (documents « sans type »).
+
 ### Choisir l'embedder
 
 Options globales, valables pour `ingest` et `query` :
@@ -113,7 +142,7 @@ Vérifier pendant une génération avec `ollama ps` : la colonne `PROCESSOR` doi
 cargo run --release -- serve --index livre.json
 ```
 
-Puis ouvrir http://localhost:3000. La page affiche les livres indexés et les modèles utilisés, propose des questions d'exemple, écrit la réponse au fil de l'eau et liste les sources (page, score, texte). Un clic sur un renvoi `[n]` ouvre la source correspondante. Thème clair/sombre automatique, utilisable sur mobile.
+Puis ouvrir http://localhost:3000. La page affiche les documents indexés (avec leur type) et les modèles utilisés, permet de limiter la recherche aux cours ou aux exemples, propose des questions d'exemple, écrit la réponse au fil de l'eau et liste les sources (page, score, texte). Un clic sur un renvoi `[n]` ouvre la source correspondante. Thème clair/sombre automatique, utilisable sur mobile.
 
 | Option | Défaut | Rôle |
 |---|---|---|
@@ -124,8 +153,8 @@ Puis ouvrir http://localhost:3000. La page affiche les livres indexés et les mo
 Les questions d'exemple sont dans `src/web/index.html` (constante `EXAMPLES`), à adapter au livre indexé. La page est embarquée dans le binaire (`include_str!`) : recompiler après l'avoir modifiée.
 
 API utilisée par la page :
-- `GET /api/info` : index, nombre de passages, livres, modèles.
-- `POST /api/ask` avec `{"question": "...", "k": 5}` : flux SSE avec les événements `sources` (JSON), `token` (chaîne JSON), puis `done` ou `error`.
+- `GET /api/info` : index, nombre de passages, documents (avec type et étiquettes), modèles.
+- `POST /api/ask` avec `{"question": "...", "k": 5, "type": "course", "tags": ["dialogue"]}` (`type` et `tags` facultatifs) : flux SSE avec les événements `sources` (JSON), `token` (chaîne JSON), puis `done` ou `error`.
 
 ### Tests
 
@@ -205,6 +234,7 @@ Le reste du code ne change pas.
 - [ ] Nettoyage du texte PDF (en-têtes, pieds de page, césures)
 - [x] Commande `ask` : passages top-k injectés comme contexte dans un LLM (Ollama, `ministral-3:8b`)
 - [x] Interface web de démo (`serve`)
+- [x] Métadonnées (type `course`/`example`, étiquettes) et filtrage de la recherche
 - [ ] Génération via l'API Mistral
 - [x] Loader PDF
 - [x] Loader EPUB

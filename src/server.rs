@@ -5,11 +5,12 @@
 //! tourne dans `spawn_blocking`.
 
 use crate::chunker::CharChunker;
+use crate::document::{DocKind, Filter, Metadata};
 use crate::embedder::Embedder;
 use crate::generator::{Generator, OllamaGenerator};
 use crate::prompt;
 use crate::rag::Rag;
-use crate::store::{JsonStore, SearchResult, VectorStore};
+use crate::store::{IndexedDocument, JsonStore, SearchResult, VectorStore};
 use anyhow::{Context, Result};
 use axum::extract::State;
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -55,7 +56,7 @@ async fn page() -> Html<&'static str> {
 struct Info {
     index: String,
     chunks: usize,
-    books: Vec<String>,
+    documents: Vec<DocumentDto>,
     embedder: String,
     generator: String,
     default_k: usize,
@@ -65,12 +66,12 @@ async fn info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(Info {
         index: state.index_name.clone(),
         chunks: state.rag.store.len(),
-        books: state
+        documents: state
             .rag
             .store
-            .sources()
-            .iter()
-            .map(|s| file_stem(s))
+            .documents()
+            .into_iter()
+            .map(DocumentDto::from)
             .collect(),
         embedder: state.rag.embedder.id(),
         generator: state.generator.id(),
@@ -78,10 +79,39 @@ async fn info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     })
 }
 
+#[derive(Serialize)]
+struct DocumentDto {
+    title: String,
+    source: String,
+    #[serde(flatten)]
+    meta: Metadata,
+    chunks: usize,
+}
+
+impl From<IndexedDocument> for DocumentDto {
+    fn from(d: IndexedDocument) -> Self {
+        Self {
+            // Nom de fichier avec extension : `ecriture.pdf` et `ecriture.txt` restent distincts.
+            title: Path::new(&d.source)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| d.source.clone()),
+            source: d.source,
+            meta: d.meta,
+            chunks: d.chunks,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct AskRequest {
     question: String,
     k: Option<usize>,
+    /// Filtre optionnel : `"course"` ou `"example"`
+    #[serde(rename = "type")]
+    kind: Option<DocKind>,
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -92,6 +122,8 @@ struct SourceDto {
     /// « page 12 », titre de chapitre… (absent pour un texte brut)
     section: Option<String>,
     citation: String,
+    #[serde(flatten)]
+    meta: Metadata,
     score: f32,
     text: String,
 }
@@ -103,6 +135,7 @@ async fn ask(
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let (tx, rx) = mpsc::unbounded_channel::<Event>();
     let k = req.k.unwrap_or(state.default_k).clamp(1, 20);
+    let filter = Filter::new(req.kind, &req.tags);
 
     tokio::task::spawn_blocking(move || {
         let send = |event: Event| {
@@ -112,6 +145,7 @@ async fn ask(
             &state.generator,
             req.question.trim(),
             k,
+            &filter,
             &mut |sources: &[SearchResult]| {
                 let dto: Vec<SourceDto> = sources
                     .iter()
@@ -121,6 +155,7 @@ async fn ask(
                         book: file_stem(&r.chunk.source),
                         section: r.chunk.section.clone(),
                         citation: prompt::citation(r),
+                        meta: r.chunk.meta.clone(),
                         score: r.score,
                         text: r.chunk.text.clone(),
                     })

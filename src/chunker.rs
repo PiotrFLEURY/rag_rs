@@ -60,6 +60,7 @@ impl Chunker for CharChunker {
                         section: section.label.clone(),
                         index: chunks.len(),
                         text,
+                        meta: doc.meta.clone(),
                     });
                 }
 
@@ -86,16 +87,17 @@ impl Chunker for CharChunker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::Section;
+    use crate::document::{DocKind, Metadata, Section};
 
     #[test]
-    fn decoupe_avec_recouvrement() {
+    fn splits_with_overlap() {
         let doc = Document {
             source: "t".into(),
             sections: vec![Section {
                 label: None,
                 text: "mot ".repeat(100),
             }],
+            meta: Metadata::new(Some(DocKind::Course), &["dialogue".into()]),
         };
         let chunks = CharChunker {
             size: 50,
@@ -114,13 +116,14 @@ mod tests {
     }
 
     #[test]
-    fn gere_les_caracteres_multioctets() {
+    fn handles_multibyte_characters() {
         let doc = Document {
             source: "t".into(),
             sections: vec![Section {
                 label: None,
                 text: "éàç ".repeat(50),
             }],
+            meta: Metadata::default(),
         };
         assert!(
             !CharChunker {

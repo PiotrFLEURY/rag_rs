@@ -40,7 +40,16 @@
   }
   button:disabled { opacity: 0.5; cursor: wait; }
   .options { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.85rem; }
-  .options input { width: 56px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+  .options { flex-wrap: wrap; }
+  .options input, .options select { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
+  .options input { width: 56px; }
+  .options .sep { margin-left: 10px; }
+  .kind { font: 600 0.68rem var(--sans); text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+  .kind.course { color: #2f6b4f; border-color: #9cc7b1; }
+  .kind.example { color: var(--accent); border-color: var(--accent-soft); }
+  @media (prefers-color-scheme: dark) { .kind.course { color: #8fd0ae; border-color: #2f5b45; } }
+  .docs { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 4px; }
+  .docs span { display: inline-flex; align-items: center; gap: 6px; }
 
   .examples { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
   .examples button {
@@ -99,9 +108,15 @@
     <button id="go" type="submit">Demander</button>
   </form>
   <div class="options">
-    <label for="k">Passages consultés</label>
+    <label for="kind">Chercher dans</label>
+    <select id="kind">
+      <option value="">toute la bibliothèque</option>
+      <option value="course">les cours</option>
+      <option value="example">les exemples</option>
+    </select>
+    <label for="k" class="sep">Passages consultés</label>
     <input id="k" type="number" min="1" max="20">
-    <span>· Entrée pour envoyer, Maj+Entrée pour aller à la ligne</span>
+    <span class="sep">Entrée pour envoyer, Maj+Entrée pour aller à la ligne</span>
   </div>
   <div class="examples" id="examples"></div>
 
@@ -123,6 +138,8 @@ const EXAMPLES = [
 ];
 
 const $ = (id) => document.getElementById(id);
+const KIND_LABELS = { course: "cours", example: "exemple" };
+const kindBadge = (type) => type ? `<span class="kind ${type}">${KIND_LABELS[type] ?? type}</span>` : "";
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 // Markdown minimal (paragraphes, listes, gras, italique) + renvois [1] cliquables.
@@ -147,6 +164,7 @@ function showSources(sources) {
     <details class="source" id="src-${s.n}">
       <summary>
         <span class="num">${s.n}</span>
+        ${kindBadge(s.type)}
         <span class="cit" title="${esc(s.citation)}">${s.section ? `<span class="sec">${esc(s.section)}</span> · ` : ""}<span class="book">${esc(s.book)}</span></span>
         <span class="score"><span class="bar"><i style="width:${Math.max(4, Math.min(100, s.score * 100))}%"></i></span>${s.score.toFixed(2)}</span>
       </summary>
@@ -184,7 +202,11 @@ async function ask(question) {
     const res = await fetch("/api/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, k: Number($("k").value) || undefined }),
+      body: JSON.stringify({
+        question,
+        k: Number($("k").value) || undefined,
+        type: $("kind").value || undefined,
+      }),
     });
     if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
 
@@ -247,10 +269,16 @@ $("examples").addEventListener("click", (e) => {
 
 fetch("/api/info").then((r) => r.json()).then((info) => {
   $("k").value = info.default_k;
-  const books = info.books.length ? info.books.map(esc).join(", ") : "aucun livre";
+  const docs = info.documents.length
+    ? info.documents.map((d) => `<span>${kindBadge(d.type)}<b>${esc(d.title)}</b></span>`).join("")
+    : "<span>aucun document</span>";
   $("meta").innerHTML =
-    `<span><b>${books}</b></span><span>${info.chunks} passages indexés</span>` +
+    `<div class="docs">${docs}</div><span>${info.chunks} passages indexés</span>` +
     `<span>recherche : ${esc(info.embedder)}</span><span>rédaction : ${esc(info.generator)}</span>`;
+  // Désactive les filtres qui ne renverraient rien.
+  for (const opt of $("kind").options) {
+    if (opt.value) opt.disabled = !info.documents.some((d) => d.type === opt.value);
+  }
 }).catch(() => { $("meta").textContent = "Serveur injoignable"; });
 </script>
 </body>

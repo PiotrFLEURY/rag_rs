@@ -10,7 +10,8 @@ mod store;
 
 use anyhow::Result;
 use chunker::CharChunker;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
+use document::{DocKind, Filter, Metadata};
 use embedder::{Embedder, HashingEmbedder, OllamaEmbedder};
 use generator::{Generator, OllamaGenerator};
 use loader::LoaderRegistry;
@@ -40,21 +41,55 @@ struct Cli {
     command: Command,
 }
 
+/// Métadonnées attribuées à un document lors de l'ingestion.
+#[derive(Args)]
+struct MetaArgs {
+    /// Rôle du document dans la base de connaissance
+    #[arg(long = "type", value_enum, value_name = "TYPE")]
+    kind: Option<DocKind>,
+    /// Étiquette libre (genre, technique…), répétable : --tag gothique --tag dialogue
+    #[arg(long = "tag", value_name = "TAG")]
+    tags: Vec<String>,
+}
+
+/// Restreint la recherche à une partie de l'index.
+#[derive(Args)]
+struct FilterArgs {
+    /// Ne chercher que dans les documents de ce type
+    #[arg(long = "type", value_enum, value_name = "TYPE")]
+    kind: Option<DocKind>,
+    /// Ne garder que les documents portant cette étiquette (répétable : toutes requises)
+    #[arg(long = "tag", value_name = "TAG")]
+    tags: Vec<String>,
+}
+
+impl FilterArgs {
+    fn filter(&self) -> Filter {
+        Filter::new(self.kind, &self.tags)
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Ingère un fichier dans l'index (le remplace s'il y était déjà)
     Ingest {
         file: PathBuf,
+        #[command(flatten)]
+        meta: MetaArgs,
         #[arg(long, default_value_t = 800)]
         chunk_size: usize,
         #[arg(long, default_value_t = 150)]
         overlap: usize,
     },
+    /// Liste les documents de l'index avec leurs métadonnées
+    List,
     /// Cherche les passages les plus pertinents pour une question
     Query {
         question: String,
         #[arg(short, default_value_t = 3)]
         k: usize,
+        #[command(flatten)]
+        filter: FilterArgs,
     },
     /// Pose une question : le LLM rédige une réponse à partir des passages retrouvés
     Ask {
@@ -74,6 +109,8 @@ enum Command {
         /// Affiche aussi le texte complet des extraits utilisés
         #[arg(long)]
         show_context: bool,
+        #[command(flatten)]
+        filter: FilterArgs,
     },
     /// Lance l'interface web de démo (questions/réponses dans le navigateur)
     Serve {
@@ -107,6 +144,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Ingest {
             file,
+            meta,
             chunk_size,
             overlap,
         } => {
@@ -121,19 +159,50 @@ fn main() -> Result<()> {
                 embedder,
                 store,
             };
-            let n = rag.ingest(&file)?;
+            let meta = Metadata::new(meta.kind, &meta.tags);
+            let description = describe_meta(&meta);
+            let n = rag.ingest(&file, meta)?;
             rag.store.save(&cli.index)?;
             if removed > 0 {
                 println!("{removed} anciens chunks remplacés");
             }
             println!(
-                "{n} chunks ingérés depuis {} → {} ({} chunks au total)",
+                "{n} chunks ingérés depuis {} [{description}] → {} ({} chunks au total)",
                 file.display(),
                 cli.index.display(),
                 rag.store.len()
             );
         }
-        Command::Query { question, k } => {
+        Command::List => {
+            let store = JsonStore::open(&cli.index, &embedder.id())?;
+            let docs = store.documents();
+            if docs.is_empty() {
+                println!("Index vide : {}", cli.index.display());
+            }
+            for d in &docs {
+                println!(
+                    "{:>6} chunks  [{}]  {}",
+                    d.chunks,
+                    describe_meta(&d.meta),
+                    d.source
+                );
+            }
+            if !docs.is_empty() {
+                println!(
+                    "\n{} document(s), {} chunks — index {} ({})",
+                    docs.len(),
+                    store.len(),
+                    cli.index.display(),
+                    embedder.id()
+                );
+            }
+        }
+        Command::Query {
+            question,
+            k,
+            filter,
+        } => {
+            let filter = filter.filter();
             let store = JsonStore::open(&cli.index, &embedder.id())?;
             let rag = Rag {
                 loaders: LoaderRegistry::default(),
@@ -142,13 +211,16 @@ fn main() -> Result<()> {
                 store,
             };
             let started = std::time::Instant::now();
-            let results = rag.retrieve(&question, k)?;
+            let results = rag.retrieve(&question, k, &filter)?;
             eprintln!(
-                "Question vectorisée par « {} » ({} chunks dans l'index) en {} ms\n",
+                "Question vectorisée par « {} » ({} chunks dans l'index, {filter}) en {} ms\n",
                 rag.embedder.id(),
                 rag.store.len(),
                 started.elapsed().as_millis()
             );
+            if results.is_empty() {
+                eprintln!("Aucun passage ne correspond au filtre.");
+            }
             for (i, r) in results.iter().enumerate() {
                 let section = r
                     .chunk
@@ -157,12 +229,13 @@ fn main() -> Result<()> {
                     .map(|s| format!(", {s}"))
                     .unwrap_or_default();
                 println!(
-                    "#{} score {:.3} — {}{} [chunk {}]\n{}\n",
+                    "#{} score {:.3} — {}{} [chunk {}] [{}]\n{}\n",
                     i + 1,
                     r.score,
                     r.chunk.source,
                     section,
                     r.chunk.index,
+                    describe_meta(&r.chunk.meta),
                     r.chunk.text
                 );
             }
@@ -174,7 +247,9 @@ fn main() -> Result<()> {
             temperature,
             num_ctx,
             show_context,
+            filter,
         } => {
+            let filter = filter.filter();
             let store = JsonStore::open(&cli.index, &embedder.id())?;
             let rag = Rag {
                 loaders: LoaderRegistry::default(),
@@ -189,16 +264,23 @@ fn main() -> Result<()> {
                 num_ctx,
             };
             eprintln!(
-                "Recherche avec « {} », réponse rédigée par « {} »…\n",
+                "Recherche avec « {} » ({filter}), réponse rédigée par « {} »…\n",
                 rag.embedder.id(),
                 generator.id()
             );
 
             let mut stdout = std::io::stdout();
-            let answer = rag.ask(&generator, &question, k, &mut |_| {}, &mut |token| {
-                print!("{token}");
-                let _ = stdout.flush();
-            })?;
+            let answer = rag.ask(
+                &generator,
+                &question,
+                k,
+                &filter,
+                &mut |_| {},
+                &mut |token| {
+                    print!("{token}");
+                    let _ = stdout.flush();
+                },
+            )?;
 
             if answer.text.trim().is_empty() {
                 eprintln!("\n(le modèle n'a renvoyé aucun texte)");
@@ -240,4 +322,17 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// « exemple · gothique, dialogue », ou « sans type » si rien n'a été précisé.
+fn describe_meta(meta: &Metadata) -> String {
+    let kind = meta
+        .kind
+        .map(|k| k.to_string())
+        .unwrap_or_else(|| "sans type".into());
+    if meta.tags.is_empty() {
+        kind
+    } else {
+        format!("{kind} · {}", meta.tags.join(", "))
+    }
 }

@@ -45,6 +45,7 @@ impl DocumentLoader for EpubLoader {
         Ok(Document {
             source: path.display().to_string(),
             sections,
+            meta: Default::default(),
         })
     }
 }

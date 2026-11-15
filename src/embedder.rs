@@ -106,7 +106,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deterministe_et_normalise() {
+    fn deterministic_and_normalized() {
         let e = HashingEmbedder::default();
         let a = e.embed("Le personnage principal").unwrap();
         assert_eq!(a, e.embed("Le personnage principal").unwrap());

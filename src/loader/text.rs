@@ -17,6 +17,7 @@ impl DocumentLoader for TextLoader {
         Ok(Document {
             source: path.display().to_string(),
             sections: vec![Section { label: None, text }],
+            meta: Default::default(),
         })
     }
 }

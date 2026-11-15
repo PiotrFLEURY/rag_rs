@@ -31,6 +31,7 @@ impl DocumentLoader for PdfLoader {
         Ok(Document {
             source: path.display().to_string(),
             sections,
+            meta: Default::default(),
         })
     }
 }
